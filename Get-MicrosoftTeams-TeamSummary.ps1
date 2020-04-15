@@ -1,51 +1,77 @@
-﻿# Define a new object to gather output
-$OutputCollection=  @()
+﻿######################################################################
+# Description: Get Public Teams list with Owner
+# Author: Jean Luc Gauthier
+# Date: 30/03/2020
+# Requires: MicrosoftTeams Module
+######################################################################
 
-Write-Verbose "Getting Team Names and Details"
-$teams = Get-Team 
-                
-Write-Host "Teams Count is $($teams.count)"
+# Define parameters
+# $Teams - Get the teams list from the tenant
+# $TeamsOwner - Get teams owner
+# $Output - Create a temporary PSObject to gather team details
+# $TeamsReport - Output report file
 
-$teams | ForEach-Object {
+# Default status message colors
+$ErrMsgColor = @{BackgroundColor="Red";ForegroundColor="White"}
+$SuccesMsgColor = @{BackgroundColor="Green";ForegroundColor="Black"}
 
-    Write-host "Getting details for Team $($_.DisplayName)"
+# Initialize the output report file
+$TeamsReport =  @()
 
-    # Calculate Description word count
-                    
-    $DescriptionWordCount = $null
-    $DescriptionWordCount = ($_.Description | Out-String | Measure-Object -Word).words
-
-    #Get channel details
-
-    $Channels = $null
-    $Channels = Get-TeamChannel -GroupId $_.GroupID
-    $ChannelCount = $Channels.count
-
-    # Get Owners, members and guests
-
-    $TeamUsers = Get-TeamUser -GroupId $_.GroupID
-                    
-    $TeamOwnerCount = ($TeamUsers | Where-Object {$_.Role -like "owner"}).count
-    $TeamMemberCount = ($TeamUsers | Where-Object {$_.Role -like "member"}).count
-    $TeamGuestCount = ($TeamUsers | Where-Object {$_.Role -like "guest"}).count
-
-    # Put all details into an object
-
-    $output = New-Object -TypeName PSobject 
-
-    $output | add-member NoteProperty "DisplayName" -value $_.DisplayName
-    $output | add-member NoteProperty "Description" -value $_.Description
-    $output | add-member NoteProperty "DescriptionWordCount" -value $DescriptionWordCount
-    $output | add-member NoteProperty "Visibility" -value $_.Visibility
-    $output | add-member NoteProperty "Archived" -value $_.Archived
-    $output | Add-Member NoteProperty "ChannelCount" -Value $ChannelCount
-    $output | Add-Member NoteProperty "OwnerCount" -Value $TeamOwnerCount
-    $output | Add-Member NoteProperty "MemberCount" -Value $TeamMemberCount
-    $output | Add-Member NoteProperty "GuestCount" -Value $TeamGuestCount
-    $output | add-member NoteProperty "GroupId" -value $_.GroupId
-
-    $OutputCollection += $output
+# Check requierements
+Function ModuleCheck{
+    if (Get-Module -ListAvailable -Name MicrosoftTeams) {
+        Write-Host "Le module Powershell pour Teams est installé." @SuccesMsgColor
+    } else {
+        Write-Host "Le module Powershell pour Teams est requis, nous essayons de l'installer" @SuccesMsgColor
+        Try {
+            Install-Module MicrosoftTeams -Force -AllowClobber
+        }
+        Catch{
+            Write-Host "Impossible d'installer le module Powershell Teams" @ErrMsgColor
+            Break
+        }
     }
 
-    # Output collection
-    $OutputCollection
+    If (!(Get-Module MicrosoftTeams)) {
+        Write-Host "Nous chargeons le module Powershell Teams" @SuccesMsgColor
+        try {
+            Import-Module MicrosoftTeams    
+        }
+        catch {
+            Write-Host "Impossible de charger le module Powershell Teams" @ErrMsgColor
+            Break
+        }
+    
+    } else {
+        Write-Host "Le module Powershell Teams est déjà chargé" @SuccesMsgColor
+    }
+}
+
+# Function to retrieve Public Teams Ownership details
+function GetTeamsSummary {
+    try {
+        $Teams = Get-Team -Visibility Public
+            $Teams | ForEach-Object {
+            $TeamsOwner = Get-TeamUser -GroupId $_.GroupId -Role Owner
+
+            # Add details to report object
+            $Output = New-Object -TypeName PSobject
+            $Output | add-member NoteProperty "Nom" -value $_.DisplayName
+            $Output | add-member NoteProperty "Description" -value $_.Description
+            $Output | add-member NoteProperty "Responsable" -value $TeamsOwner.Name
+            $Output | add-member NoteProperty "Courriel" -value $TeamsOwner.User
+
+            # Add oject details to report file
+            $TeamsReport += $Output
+        }
+    }
+    catch {
+        Write-Host "Unable to get details for $_" @DisplayName " Error detected: $_" @ErrMsgColor
+    }
+    $TeamsReport
+}
+
+# Main block
+ModuleCheck
+GetTeamsSummary
